@@ -668,14 +668,15 @@ ssh_string sftp_handle_alloc(sftp_session sftp, void *info)
   }
 
   if (i == sftp->total_allocated_handles) {
+    void **tmp;
     uint32_t old_size = sftp->total_allocated_handles;
-    sftp->total_allocated_handles += SFTP_HANDLES_CHUNK_SZ;
 
-    void **tmp = realloc(sftp->handles, sftp->total_allocated_handles * sizeof(void *));
+    tmp = realloc(sftp->handles, (old_size + SFTP_HANDLES_CHUNK_SZ) * sizeof(void *));
     if (tmp == NULL)
         return NULL; /* no handle available */
 
     sftp->handles = tmp;
+    sftp->total_allocated_handles += SFTP_HANDLES_CHUNK_SZ;
     memset(sftp->handles + old_size, '\0', SFTP_HANDLES_CHUNK_SZ * sizeof(void *));
   }
 
