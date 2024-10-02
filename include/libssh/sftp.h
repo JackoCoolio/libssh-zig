@@ -93,6 +93,7 @@ struct sftp_session_struct {
     sftp_ext ext;
     sftp_packet read_packet;
     sftp_limits_t limits;
+    uint32_t total_allocated_handles;
 };
 
 struct sftp_packet_struct {
