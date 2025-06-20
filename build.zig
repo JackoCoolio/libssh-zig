@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const name = "libssh";
+const name = "ssh";
 const version: std.SemanticVersion = .{
     .major = 0,
     .minor = 11,
@@ -8,10 +8,9 @@ const version: std.SemanticVersion = .{
 };
 
 const Options = struct {
-    crypto: enum { gcrypt, mbedtls, crypto } = .crypto,
     linkage: std.builtin.LinkMode = .static,
-    global_bind_config: []const u8,
-    global_client_config: []const u8,
+    global_bind_config: []const u8 = "/etc/ssh/libssh_server_config",
+    global_client_config: []const u8 = "/etc/ssh/ssh_config",
 };
 
 pub fn build(b: *std.Build) !void {
@@ -19,21 +18,42 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
 
     const options: Options = .{
-        .crypto = b.option(std.meta.fieldInfo(Options, .crypto).type, "crypto", "The cryptography library to use (default: crypto)") orelse .crypto,
         .linkage = b.option(std.builtin.LinkMode, "linkage", "Whether to build as a static or dynamic library (default: static)") orelse .static,
         .global_bind_config = b.option([]const u8, "global_bind_config", "") orelse "/etc/ssh/libssh_server_config",
         .global_client_config = b.option([]const u8, "global_client_config", "") orelse "/etc/ssh/ssh_config",
     };
+
+    const openssl = b.dependency("openssl", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const libcrypto = openssl.artifact("crypto");
+    libcrypto.linkage = .static;
 
     const mod = b.createModule(.{
         .target = target,
         .optimize = optimize,
         .link_libc = true,
     });
-    try addCSourceFiles(b, mod, options);
+
+    // libcrypto
+    for (libcrypto.root_module.include_dirs.items) |dir| {
+        try mod.include_dirs.append(b.allocator, dir);
+    }
+    mod.addCSourceFiles(.{ .root = b.path("src"), .files = &.{
+        "threads/libcrypto.c",
+        "pki_crypto.c",
+        "ecdh_crypto.c",
+        "getrandom_crypto.c",
+        "md_crypto.c",
+        "libcrypto.c",
+        "dh_crypto.c",
+    } });
+
+    try addCSourceFiles(b, mod);
     mod.addIncludePath(b.path("include"));
-    addVersionHeader(mod);
-    addConfigHeader(mod, options);
+    const libssh_version_h = addVersionHeader(mod);
+    const config_h = addConfigHeader(mod, options, target);
 
     const lib = b.addLibrary(.{
         .name = name,
@@ -42,10 +62,13 @@ pub fn build(b: *std.Build) !void {
         .linkage = options.linkage,
     });
 
+    lib.installConfigHeader(libssh_version_h);
+    lib.installConfigHeader(config_h);
+    lib.installHeadersDirectory(b.path("include/libssh"), "libssh", .{});
     b.installArtifact(lib);
 }
 
-fn addVersionHeader(mod: *std.Build.Module) void {
+fn addVersionHeader(mod: *std.Build.Module) *std.Build.Step.ConfigHeader {
     const b = mod.owner;
     const header = b.addConfigHeader(.{
         .style = .{ .cmake = b.path("include/libssh/libssh_version.h.cmake") },
@@ -56,22 +79,46 @@ fn addVersionHeader(mod: *std.Build.Module) void {
         .libssh_VERSION_PATCH = @as(i64, @intCast(version.patch)),
     });
     mod.addConfigHeader(header);
+    return header;
 }
 
-fn addConfigHeader(mod: *std.Build.Module, options: Options) void {
+fn addConfigHeader(mod: *std.Build.Module, options: Options, target: std.Build.ResolvedTarget) *std.Build.Step.ConfigHeader {
     const b = mod.owner;
+
+    const windows = target.result.os.tag == .windows;
+
     const header = b.addConfigHeader(.{ .style = .{ .cmake = b.path("config.h.cmake") } }, .{
-        .PROJECT_NAME = name,
+        .PROJECT_NAME = "lib" ++ name,
         .PROJECT_VERSION = b.fmt("{}", .{version}),
-        // .SYSCONFDIR = if (mod.resolved_target.?.result.os.tag == .linux) "/etc" else null,
+
         .SYSCONFDIR = null,
         .BINARYDIR = b.makeTempPath(),
         .SOURCEDIR = b.build_root.path.?,
 
         .GLOBAL_BIND_CONFIG = options.global_bind_config,
         .GLOBAL_CLIENT_CONFIG = options.global_client_config,
+
+        // libcrypto
+        .HAVE_LIBCRYPTO = true,
+
+        .HAVE_PTHREAD = getThreadsLib(mod.resolved_target.?.result) == .pthreads,
+
+        // headers
+        .HAVE_TERMIOS_H = !windows,
+        .HAVE_SYS_TIME_H = true,
+
+        // check_function_exists
+        .HAVE_ISBLANK = true,
+        .HAVE_STRNCPY = true,
+        .HAVE_STRNDUP = !windows,
+        .HAVE_STRTOULL = true,
+        .HAVE_EXPLICIT_BZERO = !windows,
+        .HAVE_MEMSET_S = !windows,
+        .HAVE_COMPILER__FUNC__ = true,
+        .HAVE_GETADDRINFO = true,
     });
     mod.addConfigHeader(header);
+    return header;
 }
 
 fn getThreadsLib(target: std.Target) ?enum { pthreads, win32 } {
@@ -82,7 +129,7 @@ fn getThreadsLib(target: std.Target) ?enum { pthreads, win32 } {
     };
 }
 
-fn addCSourceFiles(b: *std.Build, mod: *std.Build.Module, options: Options) !void {
+fn addCSourceFiles(b: *std.Build, mod: *std.Build.Module) !void {
     const src = b.path("src/");
     const flags: []const []const u8 = &.{};
 
@@ -153,47 +200,4 @@ fn addCSourceFiles(b: *std.Build, mod: *std.Build.Module, options: Options) !voi
         },
         .flags = flags,
     });
-
-    // crypto
-    mod.addCSourceFiles(.{ .root = src, .files = switch (options.crypto) {
-        .gcrypt => &.{
-            "threads/libgcrypt.c",
-            "libgcrypt.c",
-            "gcrypt_missing.c",
-            "pki_gcrypt.c",
-            "ecdh_gcrypt.c",
-            "getrandom_gcrypt.c",
-            "md_gcrypt.c",
-            "dh_key.c",
-            "pki_ed25519.c",
-            "external/ed25519.c",
-            "external/fe25519.c",
-            "external/ge25519.c",
-            "external/sc25519.c",
-        },
-        .mbedtls => &.{
-            "threads/mbedtls.c",
-            "libmbedcrypto.c",
-            "mbedcrypto_missing.c",
-            "pki_mbedcrypto.c",
-            "ecdh_mbedcrypto.c",
-            "getrandom_mbedcrypto.c",
-            "md_mbedcrypto.c",
-            "dh_key.c",
-            "pki_ed25519.c",
-            "external/ed25519.c",
-            "external/fe25519.c",
-            "external/ge25519.c",
-            "external/sc25519.c",
-        },
-        .crypto => &.{
-            "threads/libcrypto.c",
-            "pki_crypto.c",
-            "ecdh_crypto.c",
-            "getrandom_crypto.c",
-            "md_crypto.c",
-            "libcrypto.c",
-            "dh_crypto.c",
-        },
-    }, .flags = flags });
 }

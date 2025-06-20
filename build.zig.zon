@@ -4,6 +4,10 @@
     .fingerprint = 0x1eca4383d5cf1c0b, // Changing this has security and trust implications.
     .minimum_zig_version = "0.15.0-dev.822+dd75e7bcb",
     .dependencies = .{
+        .openssl = .{
+            .url = "git+https://github.com/kassane/openssl-zig.git#391fb556b5fe36be31965cc8986e884d0a0920ca",
+            .hash = "openssl-3.6.0-wZcA78NR8QHsDGf9LoBiKUKvxbKzHIP7vNdUaANn4uFF",
+        },
     },
     .paths = .{
         "build.zig",
