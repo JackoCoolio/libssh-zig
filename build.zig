@@ -85,7 +85,7 @@ fn addVersionHeader(mod: *std.Build.Module) *std.Build.Step.ConfigHeader {
 fn addConfigHeader(mod: *std.Build.Module, options: Options) *std.Build.Step.ConfigHeader {
     const b = mod.owner;
 
-    const os = mod.resolved_target.?.result.os;
+    const os = mod.resolved_target.?.result.os.tag;
 
     const header = b.addConfigHeader(.{ .style = .{ .cmake = b.path("config.h.cmake") } }, .{
         .PROJECT_NAME = "lib" ++ name,
