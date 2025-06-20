@@ -1,0 +1,17 @@
+.{
+    .name = .libssh_zig,
+    .version = "0.0.0",
+    .fingerprint = 0x1eca4383d5cf1c0b, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .openssl = .{
+            .url = "git+https://github.com/kassane/openssl-zig.git#41cd1e69926ff97732ee30efa5833029f1b39897",
+            .hash = "openssl-3.6.0-wZcA72dm8QEEc7oadIq7LkStu7kvDY-PYQdaTRNNt9LP",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

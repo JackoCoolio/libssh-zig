@@ -11,3 +11,6 @@ tags
 /obj*
 doc/tags.xml
 .DS_Store
+/.zig-cache
+/zig-out
+/zig-pkg
