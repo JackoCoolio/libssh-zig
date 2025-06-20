@@ -177,6 +177,7 @@ fn addCSourceFiles(b: *std.Build, mod: *std.Build.Module) !void {
             "socket.c",
             "string.c",
             "threads.c",
+            "threads/noop.c",
             "ttyopts.c",
             "wrapper.c",
             "external/bcrypt_pbkdf.c",
@@ -188,11 +189,7 @@ fn addCSourceFiles(b: *std.Build, mod: *std.Build.Module) !void {
         .flags = flags,
     });
 
-    // threads
-    mod.addCSourceFile(.{
-        .file = try src.join(b.allocator, "threads/noop.c"),
-        .flags = flags,
-    });
+    // os-specific threads
     if (getThreadsLib(mod.resolved_target.?.result)) |threads| mod.addCSourceFile(.{
         .file = switch (threads) {
             .pthreads => try src.join(b.allocator, "threads/pthread.c"),
