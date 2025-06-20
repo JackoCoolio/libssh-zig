@@ -91,9 +91,10 @@ fn addConfigHeader(mod: *std.Build.Module, options: Options) *std.Build.Step.Con
         .PROJECT_NAME = "lib" ++ name,
         .PROJECT_VERSION = b.fmt("{}", .{version}),
 
+        // used for tests
         .SYSCONFDIR = null,
-        .BINARYDIR = b.makeTempPath(),
-        .SOURCEDIR = b.build_root.path.?,
+        .BINARYDIR = null,
+        .SOURCEDIR = null,
 
         .GLOBAL_BIND_CONFIG = options.global_bind_config,
         .GLOBAL_CLIENT_CONFIG = options.global_client_config,
