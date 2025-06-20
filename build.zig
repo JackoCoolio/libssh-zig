@@ -50,10 +50,10 @@ pub fn build(b: *std.Build) !void {
         "dh_crypto.c",
     } });
 
-    try addCSourceFiles(b, mod);
+    try addCSourceFiles(mod);
     mod.addIncludePath(b.path("include"));
     const libssh_version_h = addVersionHeader(mod);
-    const config_h = addConfigHeader(mod, options, target);
+    const config_h = addConfigHeader(mod, options);
 
     const lib = b.addLibrary(.{
         .name = name,
@@ -82,10 +82,10 @@ fn addVersionHeader(mod: *std.Build.Module) *std.Build.Step.ConfigHeader {
     return header;
 }
 
-fn addConfigHeader(mod: *std.Build.Module, options: Options, target: std.Build.ResolvedTarget) *std.Build.Step.ConfigHeader {
+fn addConfigHeader(mod: *std.Build.Module, options: Options) *std.Build.Step.ConfigHeader {
     const b = mod.owner;
 
-    const windows = target.result.os.tag == .windows;
+    const os = mod.resolved_target.?.result.os;
 
     const header = b.addConfigHeader(.{ .style = .{ .cmake = b.path("config.h.cmake") } }, .{
         .PROJECT_NAME = "lib" ++ name,
@@ -101,19 +101,19 @@ fn addConfigHeader(mod: *std.Build.Module, options: Options, target: std.Build.R
         // libcrypto
         .HAVE_LIBCRYPTO = true,
 
-        .HAVE_PTHREAD = getThreadsLib(mod.resolved_target.?.result) == .pthreads,
+        .HAVE_PTHREAD = os != .windows and os != .wasi,
 
         // headers
-        .HAVE_TERMIOS_H = !windows,
+        .HAVE_TERMIOS_H = os != .windows,
         .HAVE_SYS_TIME_H = true,
 
         // check_function_exists
         .HAVE_ISBLANK = true,
         .HAVE_STRNCPY = true,
-        .HAVE_STRNDUP = !windows,
+        .HAVE_STRNDUP = os != .windows,
         .HAVE_STRTOULL = true,
-        .HAVE_EXPLICIT_BZERO = !windows,
-        .HAVE_MEMSET_S = !windows,
+        .HAVE_EXPLICIT_BZERO = os != .windows,
+        .HAVE_MEMSET_S = os != .windows,
         .HAVE_COMPILER__FUNC__ = true,
         .HAVE_GETADDRINFO = true,
     });
@@ -121,17 +121,12 @@ fn addConfigHeader(mod: *std.Build.Module, options: Options, target: std.Build.R
     return header;
 }
 
-fn getThreadsLib(target: std.Target) ?enum { pthreads, win32 } {
-    return switch (target.os.tag) {
-        .windows => .win32,
-        .wasi => null,
-        else => .pthreads,
-    };
-}
+fn addCSourceFiles(mod: *std.Build.Module) !void {
+    const b = mod.owner;
 
-fn addCSourceFiles(b: *std.Build, mod: *std.Build.Module) !void {
     const src = b.path("src/");
-    const flags: []const []const u8 = &.{};
+
+    const os = mod.resolved_target.?.result.os.tag;
 
     // unconditional source files
     mod.addCSourceFiles(.{
@@ -186,15 +181,12 @@ fn addCSourceFiles(b: *std.Build, mod: *std.Build.Module) !void {
             "token.c",
             "pki_ed25519_common.c",
         },
-        .flags = flags,
     });
 
     // os-specific threads
-    if (getThreadsLib(mod.resolved_target.?.result)) |threads| mod.addCSourceFile(.{
-        .file = switch (threads) {
-            .pthreads => try src.join(b.allocator, "threads/pthread.c"),
-            .win32 => try src.join(b.allocator, "threads/winlocks.c"),
-        },
-        .flags = flags,
-    });
+    switch (os) {
+        .windows => mod.addCSourceFile(.{ .file = try src.join(b.allocator, "threads/winlocks.c") }),
+        .wasi => {},
+        else => mod.addCSourceFile(.{ .file = try src.join(b.allocator, "threads/pthread.c") }),
+    }
 }
